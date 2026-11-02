@@ -78,7 +78,7 @@ if zid_file and payout_file:
             st.success("✨ تمت المرحلة الأولى بنجاح! يمكنك الآن الانتقال للمرحلة الثانية ومطابقة النظام الداخلي.")
             
         except Exception as e:
-            st.error(f"خطأ في معالجة ملفات المرحلة الأولى: {e}")
+            st.error("حدث خطأ أثناء معالجة ملفات المرحلة الأولى.")
 
     st.divider()
 
@@ -162,4 +162,4 @@ if zid_file and payout_file:
                     )
 
             except Exception as e:
-                st.error(f"حدث خطأ أثناء معالجة فواتير النظام الداخلي:
+                st.error("حدث خطأ أثناء معالجة فواتير النظام الداخلي.")
