@@ -19,7 +19,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 نظام المطابقة المالية المرحلي (زد ➔ المنصة ➔ السيستم الداخلي)")
-st.markdown("<p style='text-align: center; color: #4b5563;'>المطابقة الذكية المتعددة: بالمرجع أولاً، أو (الجوال + المبلغ + اسم العميل) عند فقدان المرجع</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #4b5563;'>المطابقة الذكية الشاملة: بحث في جميع أعمدة النظام الداخلي + المطابقة الاحتياطية (جوال + مبلغ + اسم)</p>", unsafe_allow_html=True)
 
 st.divider()
 
@@ -77,10 +77,8 @@ if zid_file and payout_file:
 
             st.success("✨ تمت المرحلة الأولى بنجاح! شاهد نتائج مطابقة المنصة أدناه أو حمل تقريرها المنفصل:")
             
-            # عرض جدول نتائج المرحلة الأولى
             st.dataframe(zid_df[['id', 'customer_name', 'customer_mobile', 'total', 'حالة_المطابقة_مع_المنصة', 'added_at (Asia/Riyadh)']], use_container_width=True, height=300)
             
-            # زر تحميل تقرير المرحلة الأولى (المنصة)
             col_bp1, col_bp2, col_bp3 = st.columns([1, 2, 1])
             with col_bp2:
                 gateway_excel_data = zid_df.to_csv(index=False).encode('utf-8-sig')
@@ -97,30 +95,36 @@ if zid_file and payout_file:
 
     st.divider()
 
-    # --- المرحلة الثانية: مطابقة الفواتير بالنظام الداخلي ---
+    # --- المرحلة الثانية: مطابقة الفواتير بالنظام الداخلي (بحث شامل) ---
     st.subheader("📌 المرحلة الثانية: المطابقة مع النظام الداخلي للشركة (فواتير النظام)")
-    st.markdown("<p style='text-align: center; color: #4b5563;'>سيقوم النظام بمطابقة الطلبات أولاً <b>برقم المرجع</b>، وإن لم يوجد يطابق تلقائياً بـ <b>(رقم الجوال + مبلغ الفاتورة + اسم العميل)</b>.</p>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #4b5563;'>سيقوم النظام بالبحث عن رقم الطلب في <b>جميع أعمدة النظام الداخلي</b>، أو مطابقة (الجوال + المبلغ + الاسم) بدقة.</p>", unsafe_allow_html=True)
     
     system_file = st.file_uploader("3️⃣ ارفع ملف فواتير النظام الداخلي (Excel / CSV)", type=["csv", "xlsx"], key="system")
 
     if system_file:
-        with st.spinner("⏳ جاري مطابقة الطلبات مع فواتير النظام الداخلي بالمعايير المتقدمة..."):
+        with st.spinner("⏳ جاري المطابقة الشاملة مع فواتير النظام الداخلي..."):
             try:
                 system_df = pd.read_csv(system_file) if system_file.name.endswith('.csv') else pd.read_excel(system_file)
                 
-                # تنظيف ملف النظام الداخلي
+                # إنشاء مجموعة شاملة لكل النصوص والأرقام الموجودة في كل أعمدة ملف النظام الداخلي لضمان عدم ضياع أي رقم طلب
+                system_all_values = set()
+                for col in system_df.columns:
+                    cleaned_col = pd.to_numeric(system_df[col], errors='coerce').fillna(0).astype('int64').astype(str).str.strip()
+                    system_all_values.update(cleaned_col[cleaned_col != '0'].tolist())
+                    # إضافة القيم النصية أيضاً
+                    str_col = system_df[col].astype(str).str.strip()
+                    system_all_values.update(str_col.tolist())
+
+                # تجهيز أعمدة النظام للمطابقة المتقدمة
                 s_cols = system_df.columns
-                s_ref_col = next((c for c in s_cols if 'مرجع' in c.lower() or 'ref' in c.lower() or 'order' in c.lower() or 'رقم' in c), s_cols[0])
                 s_amt_col = next((c for c in s_cols if 'مبلغ' in c.lower() or 'amount' in c.lower() or 'total' in c.lower()), s_cols[3] if len(s_cols)>3 else s_cols[1])
                 s_mob_col = next((c for c in s_cols if 'موبايل' in c.lower() or 'جوال' in c.lower() or 'phone' in c.lower()), None)
                 s_name_col = next((c for c in s_cols if 'اسم' in c.lower() or 'name' in c.lower() or 'العميل' in c), None)
                 
-                system_df['clean_s_ref'] = pd.to_numeric(system_df[s_ref_col], errors='coerce').fillna(0).astype('int64').astype(str).str.strip()
                 system_df['clean_s_amount'] = pd.to_numeric(system_df[s_amt_col], errors='coerce').fillna(0).round(2)
                 system_df['clean_s_mobile'] = system_df[s_mob_col].astype(str).str.replace(r'\D', '', regex=True).str.strip() if s_mob_col else ""
                 system_df['clean_s_name'] = system_df[s_name_col].astype(str).str.strip().str.lower() if s_name_col else ""
 
-                system_refs = set(system_df['clean_s_ref'])
                 system_status = []
                 
                 for idx, row in zid_df.iterrows():
@@ -129,11 +133,11 @@ if zid_file and payout_file:
                     z_name = row['clean_name']
                     z_tot = row['clean_total']
                     
-                    # 1. المطابقة المباشرة برقم المرجع
-                    if z_id in system_refs:
+                    # 1. البحث الشامل عن رقم الطلب في أي مكان بملف السيستم
+                    if z_id in system_all_values:
                         system_status.append("مفوتر بالسيستم (برقم المرجع) ✅")
                     else:
-                        # 2. المطابقة الذكية الدقيقة: (رقم الجوال + المبلغ + مطابقة جزئية للاسم)
+                        # 2. المطابقة الذكية: (رقم الجوال + المبلغ + مطابقة جزئية للاسم)
                         match_cond = (system_df['clean_s_amount'] == z_tot)
                         if z_mob != "":
                             match_cond = match_cond & (system_df['clean_s_mobile'] == z_mob)
@@ -177,7 +181,7 @@ if zid_file and payout_file:
 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
-                # زر التحميل النهائي الشامل بصيغة Excel
+                # زر التحميل الشامل بصيغة Excel
                 col_b1, col_b2, col_b3 = st.columns([1, 2, 1])
                 with col_b2:
                     excel_data = zid_df.to_csv(index=False).encode('utf-8-sig')
