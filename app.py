@@ -19,7 +19,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 نظام المطابقة المالية المرحلي (زد ➔ المنصة ➔ السيستم الداخلي)")
-st.markdown("<p style='text-align: center; color: #4b5563;'>المطابقة الذكية الشاملة: بحث في جميع أعمدة النظام الداخلي + المطابقة الاحتياطية (جوال + مبلغ + اسم)</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #4b5563;'>المطابقة الذكية المتقدمة والمتوافقة مع كافة بوابات الدفع (بما فيها تمارا وزد باي)</p>", unsafe_allow_html=True)
 
 st.divider()
 
@@ -31,14 +31,19 @@ with col1:
     zid_file = st.file_uploader("1️⃣ ارفع ملف طلبات زد (CSV / Excel)", type=["csv", "xlsx"], key="zid")
 
 with col2:
-    gateway_name = st.selectbox("اختر اسم البوابة:", ["زد باي (ZidPay)", "تابي (Tabby)", "تمارا (Tamara)", "مس بي (MisPay)", "إمكان (Emkan)", "مدفوع (Madfooat)"])
+    gateway_name = st.selectbox("اختر اسم البوابة:", ["زد باي (ZidPay)", "تمارا (Tamara)", "تابي (Tabby)", "مس بي (MisPay)", "إمكان (Emkan)", "مدفوع (Madfooat)"])
     payout_file = st.file_uploader("2️⃣ ارفع كشف تسوية المنصة (CSV / Excel)", type=["csv", "xlsx"], key="payout")
 
 if zid_file and payout_file:
-    with st.spinner("⏳ جاري المطابقة مع المنصة..."):
+    with st.spinner("⏳ جاري تحليل المطابقة مع المنصة بدقة عالية..."):
         try:
             zid_df = pd.read_csv(zid_file) if zid_file.name.endswith('.csv') else pd.read_excel(zid_file)
-            payout_df = pd.read_csv(payout_file) if payout_file.name.endswith('.csv') else pd.read_excel(payout_file)
+            
+            # قراءة ملف المنصة بحسب نوعه (فحص فاصل الترميز لـ CSV إن وجد)
+            try:
+                payout_df = pd.read_csv(payout_file, encoding='utf-8') if payout_file.name.endswith('.csv') else pd.read_excel(payout_file)
+            except:
+                payout_df = pd.read_csv(payout_file, encoding='latin1') if payout_file.name.endswith('.csv') else pd.read_excel(payout_file)
             
             # تنظيف بيانات زد وتوحيدها
             zid_df['clean_id'] = pd.to_numeric(zid_df['id'], errors='coerce').fillna(0).astype('int64').astype(str).str.strip()
@@ -46,13 +51,46 @@ if zid_file and payout_file:
             zid_df['clean_total'] = pd.to_numeric(zid_df['total'], errors='coerce').fillna(0).round(2)
             zid_df['clean_name'] = zid_df['customer_name'].astype(str).str.strip().str.lower()
             
-            # تنظيف المنصة
+            # البحث الذكي والديناميكي عن أعمدة المنصة (وخصوصاً تمارا التي تستخدم Merchant Order ID أو Reference)
             p_cols = payout_df.columns
-            p_id_col = next((c for c in p_cols if 'id' in c.lower() or 'order' in c.lower() or 'طلب' in c), p_cols[0])
-            p_amt_col = next((c for c in p_cols if 'amount' in c.lower() or 'total' in c.lower() or 'مبلغ' in c), p_cols[1] if len(p_cols)>1 else p_cols[0])
-            p_mob_col = next((c for c in p_cols if 'mobile' in c.lower() or 'phone' in c.lower() or 'جوال' in c), None)
+            p_cols_lower = [str(c).lower() for c in p_cols]
             
-            payout_df['clean_p_id'] = pd.to_numeric(payout_df[p_id_col], errors='coerce').fillna(0).astype('int64').astype(str).str.strip()
+            # البحث عن عمود رقم الطلب في المنصة
+            p_id_col = None
+            for key in ['merchant order id', 'order reference', 'reference', 'order_id', 'order id', 'id', 'رقم الطلب', 'المرجع']:
+                for idx, col_l in enumerate(p_cols_lower):
+                    if key in col_l:
+                        p_id_col = p_cols[idx]
+                        break
+                if p_id_col:
+                    break
+            if not p_id_col:
+                p_id_col = p_cols[0] # افتراضي أول عمود
+
+            # البحث عن عمود المبلغ في المنصة
+            p_amt_col = None
+            for key in ['amount', 'total', 'paid', 'مبلغ', 'الإجمالي']:
+                for idx, col_l in enumerate(p_cols_lower):
+                    if key in col_l:
+                        p_amt_col = p_cols[idx]
+                        break
+                if p_amt_col:
+                    break
+            if not p_amt_col:
+                p_amt_col = p_cols[1] if len(p_cols) > 1 else p_cols[0]
+
+            # البحث عن عمود الجوال في المنصة
+            p_mob_col = None
+            for key in ['mobile', 'phone', 'customer_mobile', 'جوال', 'هاتف']:
+                for idx, col_l in enumerate(p_cols_lower):
+                    if key in col_l:
+                        p_mob_col = p_cols[idx]
+                        break
+                if p_mob_col:
+                    break
+
+            # تجهيز وتنظيف أعمدة المنصة
+            payout_df['clean_p_id'] = payout_df[p_id_col].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
             payout_df['clean_p_amount'] = pd.to_numeric(payout_df[p_amt_col], errors='coerce').fillna(0).round(2)
             payout_df['clean_p_mobile'] = payout_df[p_mob_col].astype(str).str.replace(r'\D', '', regex=True).str.strip() if p_mob_col else ""
 
@@ -67,6 +105,7 @@ if zid_file and payout_file:
                 if z_id in payout_ids:
                     gateway_status.append("مطابق برقم الطلب ✅")
                 else:
+                    # مطابقة ذكية بديلة (المبلغ + الجوال)
                     p_found = payout_df[(payout_df['clean_p_amount'] == z_tot) & ((payout_df['clean_p_mobile'] == z_mob) if z_mob != "" else True)]
                     if not p_found.empty:
                         gateway_status.append("مطابق ذكي (جوال+مبلغ) ⚠️")
@@ -75,7 +114,7 @@ if zid_file and payout_file:
 
             zid_df['حالة_المطابقة_مع_المنصة'] = gateway_status
 
-            st.success("✨ تمت المرحلة الأولى بنجاح! شاهد نتائج مطابقة المنصة أدناه أو حمل تقريرها المنفصل:")
+            st.success(f"✨ تمت مطابقة ملف {gateway_name} بنجاح! شاهد النتائج أو حمل التقرير أدناه:")
             
             st.dataframe(zid_df[['id', 'customer_name', 'customer_mobile', 'total', 'حالة_المطابقة_مع_المنصة', 'added_at (Asia/Riyadh)']], use_container_width=True, height=300)
             
@@ -91,11 +130,11 @@ if zid_file and payout_file:
                 )
             
         except Exception as e:
-            st.error(f"خطأ في معالجة ملفات المرحلة الأولى: {e}")
+            st.error(f"حدث خطأ أثناء معالجة ملفات المنصة: {e}")
 
     st.divider()
 
-    # --- المرحلة الثانية: مطابقة الفواتير بالنظام الداخلي (بحث شامل) ---
+    # --- المرحلة الثانية: مطابقة الفواتير بالنظام الداخلي ---
     st.subheader("📌 المرحلة الثانية: المطابقة مع النظام الداخلي للشركة (فواتير النظام)")
     st.markdown("<p style='text-align: center; color: #4b5563;'>سيقوم النظام بالبحث عن رقم الطلب في <b>جميع أعمدة النظام الداخلي</b>، أو مطابقة (الجوال + المبلغ + الاسم) بدقة.</p>", unsafe_allow_html=True)
     
@@ -106,20 +145,18 @@ if zid_file and payout_file:
             try:
                 system_df = pd.read_csv(system_file) if system_file.name.endswith('.csv') else pd.read_excel(system_file)
                 
-                # إنشاء مجموعة شاملة لكل النصوص والأرقام الموجودة في كل أعمدة ملف النظام الداخلي لضمان عدم ضياع أي رقم طلب
+                # البحث الشامل في كافة أعمدة النظام الداخلي
                 system_all_values = set()
                 for col in system_df.columns:
                     cleaned_col = pd.to_numeric(system_df[col], errors='coerce').fillna(0).astype('int64').astype(str).str.strip()
                     system_all_values.update(cleaned_col[cleaned_col != '0'].tolist())
-                    # إضافة القيم النصية أيضاً
                     str_col = system_df[col].astype(str).str.strip()
                     system_all_values.update(str_col.tolist())
 
-                # تجهيز أعمدة النظام للمطابقة المتقدمة
                 s_cols = system_df.columns
-                s_amt_col = next((c for c in s_cols if 'مبلغ' in c.lower() or 'amount' in c.lower() or 'total' in c.lower()), s_cols[3] if len(s_cols)>3 else s_cols[1])
-                s_mob_col = next((c for c in s_cols if 'موبايل' in c.lower() or 'جوال' in c.lower() or 'phone' in c.lower()), None)
-                s_name_col = next((c for c in s_cols if 'اسم' in c.lower() or 'name' in c.lower() or 'العميل' in c), None)
+                s_amt_col = next((c for c in s_cols if 'مبلغ' in str(c).lower() or 'amount' in str(c).lower() or 'total' in str(c).lower()), s_cols[3] if len(s_cols)>3 else s_cols[1])
+                s_mob_col = next((c for c in s_cols if 'موبايل' in str(c).lower() or 'جوال' in str(c).lower() or 'phone' in str(c).lower()), None)
+                s_name_col = next((c for c in s_cols if 'اسم' in str(c).lower() or 'name' in str(c).lower() or 'العميل' in str(c)), None)
                 
                 system_df['clean_s_amount'] = pd.to_numeric(system_df[s_amt_col], errors='coerce').fillna(0).round(2)
                 system_df['clean_s_mobile'] = system_df[s_mob_col].astype(str).str.replace(r'\D', '', regex=True).str.strip() if s_mob_col else ""
@@ -133,11 +170,9 @@ if zid_file and payout_file:
                     z_name = row['clean_name']
                     z_tot = row['clean_total']
                     
-                    # 1. البحث الشامل عن رقم الطلب في أي مكان بملف السيستم
                     if z_id in system_all_values:
                         system_status.append("مفوتر بالسيستم (برقم المرجع) ✅")
                     else:
-                        # 2. المطابقة الذكية: (رقم الجوال + المبلغ + مطابقة جزئية للاسم)
                         match_cond = (system_df['clean_s_amount'] == z_tot)
                         if z_mob != "":
                             match_cond = match_cond & (system_df['clean_s_mobile'] == z_mob)
@@ -165,7 +200,6 @@ if zid_file and payout_file:
 
                 st.divider()
                 
-                # مؤشرات الأداء الشاملة
                 m1, m2, m3, m4 = st.columns(4)
                 m1.metric("📦 إجمالي الطلبات", len(zid_df))
                 m2.metric("✅ مطابقة المنصة", sum(1 for x in zid_df['حالة_المطابقة_مع_المنصة'] if "مفقود" not in x))
@@ -181,7 +215,6 @@ if zid_file and payout_file:
 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
-                # زر التحميل الشامل بصيغة Excel
                 col_b1, col_b2, col_b3 = st.columns([1, 2, 1])
                 with col_b2:
                     excel_data = zid_df.to_csv(index=False).encode('utf-8-sig')
