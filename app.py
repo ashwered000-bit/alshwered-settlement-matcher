@@ -19,7 +19,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 نظام المطابقة المالية المرحلي (زد ➔ المنصة ➔ السيستم الداخلي)")
-st.markdown("<p style='text-align: center; color: #4b5563;'>المطابقة الذكية على مرحلتين: أولاً مع المنصة، ثم المطابقة المتقدمة مع النظام الداخلي (بالمرجع، الجوال، والاسم)</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #4b5563;'>المطابقة الذكية المتعددة: بالمرجع أولاً، أو (الجوال + المبلغ + اسم العميل) عند فقدان المرجع</p>", unsafe_allow_html=True)
 
 st.divider()
 
@@ -40,10 +40,10 @@ if zid_file and payout_file:
             zid_df = pd.read_csv(zid_file) if zid_file.name.endswith('.csv') else pd.read_excel(zid_file)
             payout_df = pd.read_csv(payout_file) if payout_file.name.endswith('.csv') else pd.read_excel(payout_file)
             
-            # تنظيف بيانات زد
-            zid_df['clean_id'] = zid_df['id'].astype(str).str.strip()
+            # تنظيف بيانات زد وتوحيدها
+            zid_df['clean_id'] = pd.to_numeric(zid_df['id'], errors='coerce').fillna(0).astype('int64').astype(str).str.strip()
             zid_df['clean_mobile'] = zid_df['customer_mobile'].astype(str).str.replace(r'\D', '', regex=True).str.strip()
-            zid_df['clean_total'] = pd.to_numeric(zid_df['total'], errors='coerce').fillna(0)
+            zid_df['clean_total'] = pd.to_numeric(zid_df['total'], errors='coerce').fillna(0).round(2)
             zid_df['clean_name'] = zid_df['customer_name'].astype(str).str.strip().str.lower()
             
             # تنظيف المنصة
@@ -52,8 +52,8 @@ if zid_file and payout_file:
             p_amt_col = next((c for c in p_cols if 'amount' in c.lower() or 'total' in c.lower() or 'مبلغ' in c), p_cols[1] if len(p_cols)>1 else p_cols[0])
             p_mob_col = next((c for c in p_cols if 'mobile' in c.lower() or 'phone' in c.lower() or 'جوال' in c), None)
             
-            payout_df['clean_p_id'] = payout_df[p_id_col].astype(str).str.strip()
-            payout_df['clean_p_amount'] = pd.to_numeric(payout_df[p_amt_col], errors='coerce').fillna(0)
+            payout_df['clean_p_id'] = pd.to_numeric(payout_df[p_id_col], errors='coerce').fillna(0).astype('int64').astype(str).str.strip()
+            payout_df['clean_p_amount'] = pd.to_numeric(payout_df[p_amt_col], errors='coerce').fillna(0).round(2)
             payout_df['clean_p_mobile'] = payout_df[p_mob_col].astype(str).str.replace(r'\D', '', regex=True).str.strip() if p_mob_col else ""
 
             payout_ids = set(payout_df['clean_p_id'])
@@ -75,21 +75,36 @@ if zid_file and payout_file:
 
             zid_df['حالة_المطابقة_مع_المنصة'] = gateway_status
 
-            st.success("✨ تمت المرحلة الأولى بنجاح! يمكنك الآن الانتقال للمرحلة الثانية ومطابقة النظام الداخلي.")
+            st.success("✨ تمت المرحلة الأولى بنجاح! شاهد نتائج مطابقة المنصة أدناه أو حمل تقريرها المنفصل:")
+            
+            # عرض جدول نتائج المرحلة الأولى
+            st.dataframe(zid_df[['id', 'customer_name', 'customer_mobile', 'total', 'حالة_المطابقة_مع_المنصة', 'added_at (Asia/Riyadh)']], use_container_width=True, height=300)
+            
+            # زر تحميل تقرير المرحلة الأولى (المنصة)
+            col_bp1, col_bp2, col_bp3 = st.columns([1, 2, 1])
+            with col_bp2:
+                gateway_excel_data = zid_df.to_csv(index=False).encode('utf-8-sig')
+                st.download_button(
+                    label=f"📥 تحميل تقرير مطابقة المنصة ({gateway_name}) فقط",
+                    data=gateway_excel_data,
+                    file_name=f"Gateway_Reconciliation_{gateway_name}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
             
         except Exception as e:
-            st.error("حدث خطأ أثناء معالجة ملفات المرحلة الأولى.")
+            st.error(f"خطأ في معالجة ملفات المرحلة الأولى: {e}")
 
     st.divider()
 
     # --- المرحلة الثانية: مطابقة الفواتير بالنظام الداخلي ---
     st.subheader("📌 المرحلة الثانية: المطابقة مع النظام الداخلي للشركة (فواتير النظام)")
-    st.markdown("<p style='text-align: center; color: #4b5563;'>سيقوم النظام بمطابقة الطلبات بالاعتماد على: <b>(رقم المرجع + رقم الجوال + اسم العميل)</b> لضمان دقة 100%.</p>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #4b5563;'>سيقوم النظام بمطابقة الطلبات أولاً <b>برقم المرجع</b>، وإن لم يوجد يطابق تلقائياً بـ <b>(رقم الجوال + مبلغ الفاتورة + اسم العميل)</b>.</p>", unsafe_allow_html=True)
     
     system_file = st.file_uploader("3️⃣ ارفع ملف فواتير النظام الداخلي (Excel / CSV)", type=["csv", "xlsx"], key="system")
 
     if system_file:
-        with st.spinner("⏳ جاري مطابقة الطلبات مع فواتير النظام الداخلي..."):
+        with st.spinner("⏳ جاري مطابقة الطلبات مع فواتير النظام الداخلي بالمعايير المتقدمة..."):
             try:
                 system_df = pd.read_csv(system_file) if system_file.name.endswith('.csv') else pd.read_excel(system_file)
                 
@@ -100,8 +115,8 @@ if zid_file and payout_file:
                 s_mob_col = next((c for c in s_cols if 'موبايل' in c.lower() or 'جوال' in c.lower() or 'phone' in c.lower()), None)
                 s_name_col = next((c for c in s_cols if 'اسم' in c.lower() or 'name' in c.lower() or 'العميل' in c), None)
                 
-                system_df['clean_s_ref'] = system_df[s_ref_col].astype(str).str.strip()
-                system_df['clean_s_amount'] = pd.to_numeric(system_df[s_amt_col], errors='coerce').fillna(0)
+                system_df['clean_s_ref'] = pd.to_numeric(system_df[s_ref_col], errors='coerce').fillna(0).astype('int64').astype(str).str.strip()
+                system_df['clean_s_amount'] = pd.to_numeric(system_df[s_amt_col], errors='coerce').fillna(0).round(2)
                 system_df['clean_s_mobile'] = system_df[s_mob_col].astype(str).str.replace(r'\D', '', regex=True).str.strip() if s_mob_col else ""
                 system_df['clean_s_name'] = system_df[s_name_col].astype(str).str.strip().str.lower() if s_name_col else ""
 
@@ -118,14 +133,27 @@ if zid_file and payout_file:
                     if z_id in system_refs:
                         system_status.append("مفوتر بالسيستم (برقم المرجع) ✅")
                     else:
-                        # 2. المطابقة الذكية عند فقدان المرجع: (رقم الجوال + المبلغ)
+                        # 2. المطابقة الذكية الدقيقة: (رقم الجوال + المبلغ + مطابقة جزئية للاسم)
                         match_cond = (system_df['clean_s_amount'] == z_tot)
                         if z_mob != "":
                             match_cond = match_cond & (system_df['clean_s_mobile'] == z_mob)
                         
                         s_found = system_df[match_cond]
+                        
                         if not s_found.empty:
-                            system_status.append("مفوتر بالسيستم (بالجوال والمبلغ) ⚠️")
+                            name_matched = False
+                            if z_name != "":
+                                for _, s_row in s_found.iterrows():
+                                    s_n = str(s_row['clean_s_name'])
+                                    z_parts = [p for p in z_name.split() if len(p) > 2]
+                                    if any(p in s_n for p in z_parts):
+                                        name_matched = True
+                                        break
+                            
+                            if name_matched or z_name == "":
+                                system_status.append("مفوتر بالسيستم (بالجوال + المبلغ + الاسم) ⚠️")
+                            else:
+                                system_status.append("مفوتر (جوال + مبلغ بدون توافق اسم) ⚠️")
                         else:
                             system_status.append("غير مسجل بالسيستم الداخلي ❌")
 
@@ -149,12 +177,12 @@ if zid_file and payout_file:
 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
-                # زر التحميل بصيغة Excel
+                # زر التحميل النهائي الشامل بصيغة Excel
                 col_b1, col_b2, col_b3 = st.columns([1, 2, 1])
                 with col_b2:
                     excel_data = zid_df.to_csv(index=False).encode('utf-8-sig')
                     st.download_button(
-                        label="📥 تحميل التقرير النهائي الشامل بصيغة Excel",
+                        label="📥 تحميل التقرير النهائي الشامل (زد + المنصة + السيستم الداخلي)",
                         data=excel_data,
                         file_name="Final_Complete_Reconciliation_Report.csv",
                         mime="text/csv",
@@ -162,4 +190,4 @@ if zid_file and payout_file:
                     )
 
             except Exception as e:
-                st.error("حدث خطأ أثناء معالجة فواتير النظام الداخلي.")
+                st.error(f"حدث خطأ أثناء معالجة فواتير النظام الداخلي: {e}")
