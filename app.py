@@ -53,7 +53,7 @@ if zid_file and payout_file:
             p_mob_col = next((c for c in p_cols if 'mobile' in c.lower() or 'phone' in c.lower() or 'جوال' in c), None)
             
             payout_df['clean_p_id'] = payout_df[p_id_col].astype(str).str.strip()
-            payout_df['clean_p_amount'] = pd.to_numeric(payout_df[amount_col], errors='coerce').fillna(0)
+            payout_df['clean_p_amount'] = pd.to_numeric(payout_df[p_amt_col], errors='coerce').fillna(0)
             payout_df['clean_p_mobile'] = payout_df[p_mob_col].astype(str).str.replace(r'\D', '', regex=True).str.strip() if p_mob_col else ""
 
             payout_ids = set(payout_df['clean_p_id'])
@@ -118,7 +118,7 @@ if zid_file and payout_file:
                     if z_id in system_refs:
                         system_status.append("مفوتر بالسيستم (برقم المرجع) ✅")
                     else:
-                        # 2. المطابقة الذكية عند فقدان المرجع: (رقم الجوال + تطابق الاسم أو المبلغ)
+                        # 2. المطابقة الذكية عند فقدان المرجع: (رقم الجوال + المبلغ)
                         match_cond = (system_df['clean_s_amount'] == z_tot)
                         if z_mob != "":
                             match_cond = match_cond & (system_df['clean_s_mobile'] == z_mob)
@@ -162,4 +162,4 @@ if zid_file and payout_file:
                     )
 
             except Exception as e:
-                st.error(f"حدث خطأ أثناء معالجة فواتير النظام الداخلي: {e}")
+                st.error(f"حدث خطأ أثناء معالجة فواتير النظام الداخلي:
