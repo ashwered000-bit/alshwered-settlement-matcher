@@ -3,7 +3,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
-# ضبط إعدادات الصفحة لتكون واسعة ومريحة لعين المحاسب
+# ضبط إعدادات الصفحة
 st.set_page_config(
     page_title="نظام المطابقة المالية الآلي - شركة الشويرد", layout="wide"
 )
@@ -14,17 +14,15 @@ st.set_page_config(
 ZID_STORE_ID = "113480"
 ZID_MANAGER_TOKEN = "eyJpdiI6Ik1aYmZFWTVvZnZQS2JDaURoZEpySEE9PSIsInZhbHVlIjoiTnNTUnNvMmp6VXFLaWg0V3dmaWZyN21WZy9xUzE3ZzNMdzZwTUxTNk95aEpPK2Rpd2pZNEJkM1VzdjB6VER5TXJmU2FhTGNCak5UVU5sYStldFEvWmtMQmpheFNXQjgvaWRQWCtlRXFqZ3FJeTZXMCsxQ1VQZXlrMytwNStZT0t0SDR1Y3lnVUdYYmJ4OUpGZUxtSlFSbVBPZW9rdlJSL1RKeVZPMEN4SktnU0xyaGdOZnErcmZTcCt0bExXWUFPajJ0ZkZ6emVDUDRBU3RCUmZ1dW9GR3BqUHN1d0tiZG02OWtYOGMraG1HKys0ZFZwcHRDdEVQYk0waHVseDR1NlNCRlVQcXlWUlNzRmR6cGgyTlZwamc9PSIsIm1hYyI6IjgwNmU5M2ZhNTYyZWZjMmU4OGI1NzlhMDEwNzQxY2E3MjhhMThlODUxYTRhNTNmNDdhZjY1MTYyMDU3NTRjOTMiLCJ0YWciOiIifQ=="
 
-
-st.title("📊 لوحة المطابقة المالية الموحدة - شركة الشويرد")
+st.title("لوحة المطابقة المالية الموحدة - شركة الشويرد")
 st.markdown("---")
 
 
 # ---------------------------------------------------------
-# دالة جلب بيانات زد آلياً عبر الـ API مع فحص الأخطاء
+# دالة جلب بيانات زد آلياً عبر الـ API
 # ---------------------------------------------------------
 @st.cache_data(ttl=300)
 def fetch_zid_data():
-  # التعديل هنا: التأكد من استخدام الرابط الصحيح لمدير متجر زد
   url = "https://api.zid.sa/v1/managers/store/orders"
   headers = {
       "X-Manager-Token": ZID_MANAGER_TOKEN,
@@ -34,13 +32,10 @@ def fetch_zid_data():
   }
   try:
     response = requests.get(url, headers=headers, timeout=15)
-
-    # طباعة كود الاستجابة للتأكد من حالة الاتصال
     st.sidebar.info(f"حالة الاتصال بـ Zid API: {response.status_code}")
 
     if response.status_code == 200:
       data = response.json()
-      # التعامل مع احتمال أن تكون الطلبات داخل مفتاح "orders" أو "data"
       orders = (
           data.get("orders", [])
           if isinstance(data, dict)
@@ -93,28 +88,27 @@ def fetch_zid_data():
 
 
 def fetch_other_gateways_api():
-  # مخصص للبوابات الأخرى عند توفر مسارات الـ API الخاصة بها
   return pd.DataFrame()
 
 
 # ---------------------------------------------------------
-# واجهة المحاسب: الشريط الجانبي (Sidebar)
+# واجهة المحاسب: الشريط الجانبي
 # ---------------------------------------------------------
-st.sidebar.header("⚙️ خيارات ومطابقة المحاسب")
+st.sidebar.header("خيارات ومطابقة المحاسب")
 st.sidebar.markdown(
-    "المنصات وبوابات الدفع مرتبطة **آلياً عبر الـ API** ولا تتطلب رفع ملفات."
+    "المنصات وبوابات الدفع مرتبطة آلياً عبر الـ API ولا تتطلب رفع ملفات."
 )
 
 onyx_file = st.sidebar.file_uploader(
-    "📥 رفع ملف أونكس برو (اختياري للمطابقة المحاسبية)", type=["xlsx", "csv"]
+    "رفع ملف أونكس برو (اختياري للمطابقة المحاسبية)", type=["xlsx", "csv"]
 )
 
-if st.sidebar.button("🔄 تحديث وسحب البيانات من الـ APIs"):
+if st.sidebar.button("تحديث وسحب البيانات من الـ APIs"):
   st.cache_data.clear()
   st.rerun()
 
 # ---------------------------------------------------------
-# معالجة وجمع البيانات
+# معالجة البيانات
 # ---------------------------------------------------------
 df_zid = fetch_zid_data()
 df_others = fetch_other_gateways_api()
@@ -160,10 +154,9 @@ if all_frames:
         onyx_matched_keys.update(
             df_onyx[o_phone].astype(str).str.strip().tolist()
         )
-      st.sidebar.success("✅ تم قراءة كشف أونكس برو ومطابقته بنجاح")
+      st.sidebar.success("تم قراءة كشف أونكس برو ومطابقته بنجاح")
     except Exception as e:
       st.sidebar.error(f"خطأ في قراءة ملف أونكس: {e}")
-
 
   def resolve_status(row):
     dep = str(row["رقم الإيداع / التسوية"]).strip().lower()
@@ -171,7 +164,6 @@ if all_frames:
       return "مطابق"
     else:
       return "معلق لم ينزل رقم إيداع"
-
 
   master_df["حالة المطابقة"] = master_df.apply(resolve_status, axis=1)
 
@@ -191,4 +183,63 @@ if all_frames:
   pending_df = master_df[master_df["حالة المطابقة"] == "معلق لم ينزل رقم إيداع"]
 
   c1, c2, c3 = st.columns(3)
-  c1.metric("📦 إجمالي الحركات (API)", f"{len(
+  c1.metric(
+      label="إجمالي الحركات (API)", value=f"{len(master_df)} حركة"
+  )
+  c2.metric(
+      label="مطابق (تم الإيداع)",
+      value=f"{len(matched_df)} حركة",
+      delta=f"{matched_df['المبلغ'].sum():,.2f} ر.س",
+  )
+  c3.metric(
+      label="معلق (بانتظار رقم الإيداع)",
+      value=f"{len(pending_df)} حركة",
+      delta=f"-{pending_df['المبلغ'].sum():,.2f} ر.س",
+      delta_color="inverse",
+  )
+
+  st.markdown("---")
+
+  filter_col1, filter_col2 = st.columns([2, 2])
+
+  with filter_col1:
+    view_mode = st.radio(
+        "عرض الحركات:",
+        ["الكل", "مطابق فقط", "معلق لم ينزل رقم إيداع فقط"],
+        horizontal=True,
+    )
+
+  with filter_col2:
+    search_query = st.text_input(
+        "بحث سريع (برقم الطلب، الجوال، أو رقم الإيداع):", ""
+    )
+
+  if view_mode == "مطابق فقط":
+    working_df = matched_df
+  elif view_mode == "معلق لم ينزل رقم إيداع فقط":
+    working_df = pending_df
+  else:
+    working_df = master_df
+
+  if search_query:
+    working_df = working_df[
+        working_df.astype(str)
+        .apply(lambda x: x.str.contains(search_query, case=False).any(), axis=1)
+    ]
+
+  st.dataframe(working_df, use_container_width=True, hide_index=True)
+
+  st.markdown("---")
+  output_buffer = io.BytesIO()
+  with pd.ExcelWriter(output_buffer, engine="xlsxwriter") as writer:
+    master_df.to_excel(writer, sheet_name="تقرير المطابقة المالي", index=False)
+
+  st.download_button(
+      label="تحميل تقرير المطابقة الشامل (Excel للمحاسبة)",
+      data=output_buffer.getvalue(),
+      file_name="Shuwayred_Financial_Reconciliation.xlsx",
+      mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  )
+
+else:
+  st.warning("جاري سحب البيانات أو تحقق من كود استجابة Zid API في الشريط الجانبي.")
