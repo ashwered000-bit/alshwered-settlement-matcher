@@ -61,7 +61,7 @@ GATEWAYS_CONFIG = {
 }
 
 # ---------------------------------------------------------
-# واجهة الرفع وإدارة الجلسة (Session State) لزر التحديث
+# واجهة الرفع وإدارة الجلسة لزر التحديث
 # ---------------------------------------------------------
 st.sidebar.header("📥 إدخال البيانات")
 uploaded_file = st.sidebar.file_uploader(
@@ -272,41 +272,51 @@ if "zid_file_bytes" in st.session_state:
       status_msg = ""
       ref_id = ""
       gateway_label = ""
+      verification_status = ""
 
-      if "tabby" in method or "تابي" in method:
+      # الفحص الدقيق المخصص للبوابات المستهدفة فقط
+      if "tabby" in method:
         gateway_label = "تابي (Tabby)"
         is_found, status_msg, ref_id = check_tabby_payment(order_id)
-      elif "tamara" in method or "تمارا" in method:
+        verification_status = (
+            "✅ موجود وموثق" if is_found else "❌ غير موجود / معلق (خطر)"
+        )
+      elif "tamara" in method or "قسمها حتى 4 دفعات" in method:
         gateway_label = "تمارا (Tamara)"
         is_found, status_msg, ref_id = check_tamara_payment(order_id)
+        verification_status = (
+            "✅ موجود وموثق" if is_found else "❌ غير موجود / معلق (خطر)"
+        )
       elif "mispay" in method or "مس بي" in method or "مسبي" in method:
         gateway_label = "مس بي (Mispay)"
         is_found, status_msg, ref_id = check_mispay_payment(order_id)
+        verification_status = (
+            "✅ موجود وموثق" if is_found else "❌ غير موجود / معلق (خطر)"
+        )
       elif "emkan" in method or "إمكان" in method or "امكان" in method:
         gateway_label = "إمكان (Emkan)"
         is_found, status_msg, ref_id = check_emkan_payment(order_id)
+        verification_status = (
+            "✅ موجود وموثق" if is_found else "❌ غير موجود / معلق (خطر)"
+        )
       elif "madfu" in method or "مدفوع" in method:
         gateway_label = "مدفوع (Madfu)"
         is_found, status_msg, ref_id = check_madfu_payment(order_id)
+        verification_status = (
+            "✅ موجود وموثق" if is_found else "❌ غير موجود / معلق (خطر)"
+        )
       else:
+        # الوسائط الأخرى مثل زد باي، أمازون، التحويل البنكي، إلخ (لا تفحص بالـ API ولا تعتبر خطراً)
         gateway_label = f"وسيلة أخرى ({method if method else 'غير محددة'})"
-        is_found = True
-        status_msg = "خارج نطاق بوابات التقسيط BNPL المستهدفة"
+        verification_status = "ℹ️ وسيلة أخرى (غير مشمولة بالفحص)"
+        status_msg = "خارج نطاق بوابات التقسيط المستهدفة"
 
       results.append({
           "رقم طلب زد": order_id,
           "وسيلة الدفع في زد": method,
           "البوابة المحددة": gateway_label,
           "المبلغ": amount,
-          "حالة التحقق": (
-              "✅ موجود وموثق"
-              if is_found
-              else (
-                  "ℹ️ دفع إلكتروني عادي/أخرى"
-                  if "خارج نطاق" in status_msg
-                  else "❌ غير موجود / معلق (خطر)"
-              )
-          ),
+          "حالة التحقق": verification_status,
           "تفاصيل حالة البوابة": status_msg,
           "مرجع العملية": ref_id,
       })
