@@ -9,17 +9,17 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# إعدادات الـ APIs (ربط المنصات وبوابات الدفع)
+# إعدادات الـ APIs (ربط المنصات وبوابات الدفع) - التوكن المحدث
 # ---------------------------------------------------------
 ZID_STORE_ID = "113480"
-ZID_MANAGER_TOKEN = "eyJpdiI6Ik1aYmZFWTVvZnZQS2JDaURoZEpySEE9PSIsInZhbHVlIjoiTnNTUnNvMmp6VXFLaWg0V3dmaWZyN21WZy/xUzE3ZzNMdzZwTUxTNk95aEpPK2Rpd2pZNEJkM1VzdjB6VER5TXJmU2FhTGNCak5UVU5sYStldFEvWmtMQmpheFNXQjgvaWRQWCtlRXFqZ3FJeTZXMCsxQ1VQZXlrMytwNStZT0t0SDR1Y3lnVUdYYmJ4OUpGZUxtSlFSbVBPZW9rdlJSL1RKeVZPMEN4SktnU0xyaGdOZnErcmZTcCt0bExXWUFPajJ0ZkZ6emVDUDRBU3RCUmZ1dW9GR3BqUHN1d0tiZG02OWtYOGMraG1HKys0ZFZwcHRDdEVQYk0waHVseDR1NlNCRlVQcXlWUlNzRmR6cGgyTlZwamc9PSIsIm1hYyI6IjgwNmU5M2ZhNTYyZWZjMmU4OGI1NzlhMDEwNzQxY2E3MjhhMThlODUxYTRhNTNmNDdhZjY1MTYyMDU3NTRjOTMiLCJ0YWciOiIifQ=="
+ZID_MANAGER_TOKEN = "eyJpdiI6InN1U2pZS2xTc1ZtTW1WZktUQzAyU0E9PSIsInZhbHVlIjoiVmx3MmdOSHFWT0ZhKzFLdE56M2hEcm1xSGtpUTNBUlhaTCt1N2h6OHkyQ0Zid1Jjd0RXK1BLRm1xajNYdmlRUStUMlJxdWFzSHJtbTVEWVJYb0xjZktsRjZ0TVllOWdBOVg3Z2N6YmpUTEdSMUEvZ2QxeTZFMVJ0SVhKOVBTTE83WXpTd2QxQm5aSEdCZ29tRDk3YzEyaE13cFJYVVVjUE9wQmpOYm1LeUY4bTRsNTlPcm1zQjd4QUVCeHFaTzNnR2xkZ1BJQXdBaXZ5WEJsUDcxeTlNditKZXIwWTBMTHR5elRqMWlGNlZGcXlWWDFRSlRGNVdtOXJVS3hrNW0vYS96aEMzWWJOemhONlBzZzBIcXBBMGc9PSIsIm1hYyI6ImU2YWVmMGE0ODVlNzY5YjU2YzhhMmI0MjFiYmY2ODU1MWNlZTJlMGJmOTEyYjQyZmZhNjQ4M2VhYTAyNjdlY2EiLCJ0YWciOiIifQ=="
 
 st.title("لوحة المطابقة المالية الموحدة - شركة الشويرد")
 st.markdown("---")
 
 
 # ---------------------------------------------------------
-# دالة جلب بيانات زد آلياً عبر الـ API مع معالجة الـ JSON الآمنة
+# دالة جلب بيانات زد آلياً عبر الـ API
 # ---------------------------------------------------------
 @st.cache_data(ttl=300)
 def fetch_zid_data():
@@ -35,12 +35,10 @@ def fetch_zid_data():
     st.sidebar.info(f"Zid API حالة الاتصال: {response.status_code}")
 
     if response.status_code == 200:
-      # التحقق مما إذا كانت الاستجابة تحتوي على نص فارغ
       if not response.text.strip():
         st.error("استجابة الخادم فارغة تماماً.")
         return pd.DataFrame()
 
-      # محاولة تحليل الرد كـ JSON بلطف لمنع الانهيار
       try:
         data = response.json()
       except Exception:
