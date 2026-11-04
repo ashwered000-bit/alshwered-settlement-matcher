@@ -12,14 +12,14 @@ st.set_page_config(
 # إعدادات الـ APIs (ربط المنصات وبوابات الدفع)
 # ---------------------------------------------------------
 ZID_STORE_ID = "113480"
-ZID_MANAGER_TOKEN = "eyJpdiI6Ik1aYmZFWTVvZnZQS2JDaURoZEpySEE9PSIsInZhbHVlIjoiTnNTUnNvMmp6VXFLaWg0V3dmaWZyN21WZy9xUzE3ZzNMdzZwTUxTNk95aEpPK2Rpd2pZNEJkM1VzdjB6VER5TXJmU2FhTGNCak5UVU5sYStldFEvWmtMQmpheFNXQjgvaWRQWCtlRXFqZ3FJeTZXMCsxQ1VQZXlrMytwNStZT0t0SDR1Y3lnVUdYYmJ4OUpGZUxtSlFSbVBPZW9rdlJSL1RKeVZPMEN4SktnU0xyaGdOZnErcmZTcCt0bExXWUFPajJ0ZkZ6emVDUDRBU3RCUmZ1dW9GR3BqUHN1d0tiZG02OWtYOGMraG1HKys0ZFZwcHRDdEVQYk0waHVseDR1NlNCRlVQcXlWUlNzRmR6cGgyTlZwamc9PSIsIm1hYyI6IjgwNmU5M2ZhNTYyZWZjMmU4OGI1NzlhMDEwNzQxY2E3MjhhMThlODUxYTRhNTNmNDdhZjY1MTYyMDU3NTRjOTMiLCJ0YWciOiIifQ=="
+ZID_MANAGER_TOKEN = "eyJpdiI6Ik1aYmZFWTVvZnZQS2JDaURoZEpySEE9PSIsInZhbHVlIjoiTnNTUnNvMmp6VXFLaWg0V3dmaWZyN21WZy/xUzE3ZzNMdzZwTUxTNk95aEpPK2Rpd2pZNEJkM1VzdjB6VER5TXJmU2FhTGNCak5UVU5sYStldFEvWmtMQmpheFNXQjgvaWRQWCtlRXFqZ3FJeTZXMCsxQ1VQZXlrMytwNStZT0t0SDR1Y3lnVUdYYmJ4OUpGZUxtSlFSbVBPZW9rdlJSL1RKeVZPMEN4SktnU0xyaGdOZnErcmZTcCt0bExXWUFPajJ0ZkZ6emVDUDRBU3RCUmZ1dW9GR3BqUHN1d0tiZG02OWtYOGMraG1HKys0ZFZwcHRDdEVQYk0waHVseDR1NlNCRlVQcXlWUlNzRmR6cGgyTlZwamc9PSIsIm1hYyI6IjgwNmU5M2ZhNTYyZWZjMmU4OGI1NzlhMDEwNzQxY2E3MjhhMThlODUxYTRhNTNmNDdhZjY1MTYyMDU3NTRjOTMiLCJ0YWciOiIifQ=="
 
 st.title("لوحة المطابقة المالية الموحدة - شركة الشويرد")
 st.markdown("---")
 
 
 # ---------------------------------------------------------
-# دالة جلب بيانات زد آلياً عبر الـ API
+# دالة جلب بيانات زد آلياً عبر الـ API مع معالجة الـ JSON الآمنة
 # ---------------------------------------------------------
 @st.cache_data(ttl=300)
 def fetch_zid_data():
@@ -32,10 +32,24 @@ def fetch_zid_data():
   }
   try:
     response = requests.get(url, headers=headers, timeout=15)
-    st.sidebar.info(f"حالة الاتصال بـ Zid API: {response.status_code}")
+    st.sidebar.info(f"Zid API حالة الاتصال: {response.status_code}")
 
     if response.status_code == 200:
-      data = response.json()
+      # التحقق مما إذا كانت الاستجابة تحتوي على نص فارغ
+      if not response.text.strip():
+        st.error("استجابة الخادم فارغة تماماً.")
+        return pd.DataFrame()
+
+      # محاولة تحليل الرد كـ JSON بلطف لمنع الانهيار
+      try:
+        data = response.json()
+      except Exception:
+        st.error(
+            "الاستجابة الواردة ليست بصيغة JSON صحيحة. النص المستقبل:"
+            f" {response.text[:200]}"
+        )
+        return pd.DataFrame()
+
       orders = (
           data.get("orders", [])
           if isinstance(data, dict)
@@ -83,7 +97,7 @@ def fetch_zid_data():
       )
       return pd.DataFrame()
   except Exception as e:
-    st.error(f"حدث خطأ برمج أثناء الاتصال بـ Zid API: {e}")
+    st.error(f"حدث خطأ أثناء الاتصال بـ Zid API: {e}")
     return pd.DataFrame()
 
 
@@ -158,12 +172,14 @@ if all_frames:
     except Exception as e:
       st.sidebar.error(f"خطأ في قراءة ملف أونكس: {e}")
 
+
   def resolve_status(row):
     dep = str(row["رقم الإيداع / التسوية"]).strip().lower()
     if dep != "" and dep != "nan" and dep != "none":
       return "مطابق"
     else:
       return "معلق لم ينزل رقم إيداع"
+
 
   master_df["حالة المطابقة"] = master_df.apply(resolve_status, axis=1)
 
@@ -183,9 +199,7 @@ if all_frames:
   pending_df = master_df[master_df["حالة المطابقة"] == "معلق لم ينزل رقم إيداع"]
 
   c1, c2, c3 = st.columns(3)
-  c1.metric(
-      label="إجمالي الحركات (API)", value=f"{len(master_df)} حركة"
-  )
+  c1.metric(label="إجمالي الحركات (API)", value=f"{len(master_df)} حركة")
   c2.metric(
       label="مطابق (تم الإيداع)",
       value=f"{len(matched_df)} حركة",
