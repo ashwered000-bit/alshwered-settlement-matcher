@@ -20,10 +20,11 @@ st.markdown("---")
 
 
 # ---------------------------------------------------------
-# دالة جلب بيانات زد آلياً عبر الـ API
+# دالة جلب بيانات زد آلياً عبر الـ API مع فحص الأخطاء
 # ---------------------------------------------------------
 @st.cache_data(ttl=300)
 def fetch_zid_data():
+  # التعديل هنا: التأكد من استخدام الرابط الصحيح لمدير متجر زد
   url = "https://api.zid.sa/v1/managers/store/orders"
   headers = {
       "X-Manager-Token": ZID_MANAGER_TOKEN,
@@ -33,8 +34,21 @@ def fetch_zid_data():
   }
   try:
     response = requests.get(url, headers=headers, timeout=15)
+
+    # طباعة كود الاستجابة للتأكد من حالة الاتصال
+    st.sidebar.info(f"حالة الاتصال بـ Zid API: {response.status_code}")
+
     if response.status_code == 200:
-      orders = response.json().get("orders", [])
+      data = response.json()
+      # التعامل مع احتمال أن تكون الطلبات داخل مفتاح "orders" أو "data"
+      orders = (
+          data.get("orders", [])
+          if isinstance(data, dict)
+          else data.get("data", [])
+      )
+      if not orders and isinstance(data, list):
+        orders = data
+
       parsed = []
       for order in orders:
         payment_info = order.get("payment", {})
@@ -48,26 +62,38 @@ def fetch_zid_data():
 
         parsed.append({
             "المنصة / البوابة": "متجر زد (Zid)",
-            "رقم الطلب / المرجع": str(order.get("id", "")),
-            "رقم الجوال": str(customer_info.get("mobile", "")).strip(),
-            "تاريخ العملية": order.get("created_at", "")[:10],
-            "وسيلة الدفع": payment_info.get("payment_method", {}).get(
-                "name", "غير محدد"
+            "رقم الطلب / المرجع": str(
+                order.get("id") or order.get("order_id", "")
             ),
-            "المبلغ": float(order.get("order_total", 0)),
+            "رقم الجوال": str(
+                customer_info.get("mobile") or order.get("customer_phone", "")
+            ).strip(),
+            "تاريخ العملية": str(
+                order.get("created_at") or order.get("date", "")
+            )[:10],
+            "وسيلة الدفع": str(
+                payment_info.get("payment_method", {}).get("name")
+                or order.get("payment_method", "غير محدد")
+            ),
+            "المبلغ": float(
+                order.get("order_total") or order.get("total", 0.0)
+            ),
             "رقم الإيداع / التسوية": str(deposit_id).strip(),
         })
       return pd.DataFrame(parsed)
     else:
+      st.error(
+          f"فشل جلب البيانات من زد. كود الخطأ: {response.status_code} - التفاصيل:"
+          f" {response.text}"
+      )
       return pd.DataFrame()
-  except Exception:
+  except Exception as e:
+    st.error(f"حدث خطأ برمج أثناء الاتصال بـ Zid API: {e}")
     return pd.DataFrame()
 
 
-# (ملاحظة: يمكنك توسيع هذه الدوال لاحقاً لربط نقاط النهاية API الخاصة بتابي وتمارا وبقية المنصات بنفس الطريقة)
 def fetch_other_gateways_api():
-  # هنا يتم جلب بيانات البوابات الأخرى (Tamara, Tabby, Emkan, Ms Pay, Madfou3) عبر الـ APIs الخاصة بها
-  # كمثال توضيحي نعيد قائمة فارغة لحين ربط مسارات الـ Endpoints الخاصة بها
+  # مخصص للبوابات الأخرى عند توفر مسارات الـ API الخاصة بها
   return pd.DataFrame()
 
 
@@ -79,12 +105,10 @@ st.sidebar.markdown(
     "المنصات وبوابات الدفع مرتبطة **آلياً عبر الـ API** ولا تتطلب رفع ملفات."
 )
 
-# الزر اليدوي الوحيد: ملف أونكس برو
 onyx_file = st.sidebar.file_uploader(
     "📥 رفع ملف أونكس برو (اختياري للمطابقة المحاسبية)", type=["xlsx", "csv"]
 )
 
-# زر لتحديث البيانات وسحبها فوراً
 if st.sidebar.button("🔄 تحديث وسحب البيانات من الـ APIs"):
   st.cache_data.clear()
   st.rerun()
@@ -104,7 +128,6 @@ if not df_others.empty:
 if all_frames:
   master_df = pd.concat(all_frames, ignore_index=True)
 
-  # معالجة ملف أونكس برو إذا تم رفعه
   onyx_matched_keys = set()
   if onyx_file:
     try:
@@ -141,7 +164,7 @@ if all_frames:
     except Exception as e:
       st.sidebar.error(f"خطأ في قراءة ملف أونكس: {e}")
 
-  # تطبيق شرط المطابقة الرئيسي (وجود رقم إيداع / تسوية)
+
   def resolve_status(row):
     dep = str(row["رقم الإيداع / التسوية"]).strip().lower()
     if dep != "" and dep != "nan" and dep != "none":
@@ -149,9 +172,9 @@ if all_frames:
     else:
       return "معلق لم ينزل رقم إيداع"
 
+
   master_df["حالة المطابقة"] = master_df.apply(resolve_status, axis=1)
 
-  # فحص المطابقة مع أونكس إذا وُفت الملف
   if onyx_file:
 
     def check_onyx(row):
@@ -163,80 +186,9 @@ if all_frames:
 
     master_df["حالة أونكس"] = master_df.apply(check_onyx, axis=1)
 
-  # ---------------------------------------------------------
-  # واجهة المحاسب: مؤشرات الملخص (KPI Metrics)
-  # ---------------------------------------------------------
+  # مؤشرات الملخص
   matched_df = master_df[master_df["حالة المطابقة"] == "مطابق"]
   pending_df = master_df[master_df["حالة المطابقة"] == "معلق لم ينزل رقم إيداع"]
 
   c1, c2, c3 = st.columns(3)
-  c1.metric("📦 إجمالي الحركات (API)", f"{len(master_df)} حركة")
-  c2.metric(
-      "✅ مطابق (تم الإيداع)",
-      f"{len(matched_df)} حركة",
-      f"{matched_df['المبلغ'].sum():,.2f} ر.س",
-  )
-  c3.metric(
-      "⏳ معلق (بانتظار رقم الإيداع)",
-      f"{len(pending_df)} حركة",
-      f"-{pending_df['المبلغ'].sum():,.2f} ر.س",
-      delta_color="inverse",
-  )
-
-  st.markdown("---")
-
-  # ---------------------------------------------------------
-  # فلاتر البحث والعرض السريع للمحاسب
-  # ---------------------------------------------------------
-  filter_col1, filter_col2 = st.columns([2, 2])
-
-  with filter_col1:
-    view_mode = st.radio(
-        "عرض الحركات:",
-        ["الكل", "مطابق فقط", "معلق لم ينزل رقم إيداع فقط"],
-        horizontal=True,
-    )
-
-  with filter_col2:
-    search_query = st.text_input(
-        "🔍 بحث سريع (برقم الطلب، الجوال، أو رقم الإيداع):", ""
-    )
-
-  # تطبيق الفلاتر
-  if view_mode == "مطابق فقط":
-    working_df = matched_df
-  elif view_mode == "معلق لم ينزل رقم إيداع فقط":
-    working_df = pending_df
-  else:
-    working_df = master_df
-
-  if search_query:
-    working_df = working_df[
-        working_df.astype(str)
-        .apply(lambda x: x.str.contains(search_query, case=False).any(), axis=1)
-    ]
-
-  # ---------------------------------------------------------
-  # عرض الجدول المنسق للمحاسب
-  # ---------------------------------------------------------
-  st.dataframe(working_df, use_container_width=True, hide_index=True)
-
-  # ---------------------------------------------------------
-  # زر تصدير التقرير النهائي
-  # ---------------------------------------------------------
-  st.markdown("---")
-  output_buffer = io.BytesIO()
-  with pd.ExcelWriter(output_buffer, engine="xlsxwriter") as writer:
-    master_df.to_excel(writer, sheet_name="تقرير المطابقة المالي", index=False)
-
-  st.download_button(
-      label="📥 تحميل تقرير المطابقة الشامل (Excel للمحاسبة)",
-      data=output_buffer.getvalue(),
-      file_name="Shuwayred_Financial_Reconciliation.xlsx",
-      mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  )
-
-else:
-  st.warning(
-      "جاري سحب البيانات من المنصات عبر الـ API، أو لا توجد بيانات متاحة حالياً."
-  )
+  c1.metric("📦 إجمالي الحركات (API)", f"{len(
