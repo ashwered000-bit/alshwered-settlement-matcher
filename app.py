@@ -1,155 +1,151 @@
 import io
 import pandas as pd
-import requests
 import streamlit as st
 
 st.set_page_config(
     page_title="نظام المطابقة المالية الآلي - شركة الشويرد", layout="wide"
 )
 
-ZID_STORE_ID = "113480"
-ZID_MANAGER_TOKEN = "eyJpdiI6InN1U2pZS2xTc1ZtTW1WZktUQzAyU0E9PSIsInZhbHVlIjoiVmx3MmdOSHFWT0ZhKzFLdE56M2hEcm1xSGtpUTNBUlhaTCt1N2h6OHkyQ0Zid1Jjd0RXK1BLRm1xajNYdmlRUStUMlJxdWFzSHJtbTVEWVJYb0xjZktsRjZ0TVllOWdBOVg3Z2N6YmpUTEdSMUEvZ2QxeTZFMVJ0SVhKOVBTTE83WXpTd2QxQm5aSEdCZ29tRDk3YzEyaE13cFJYVVVjUE9wQmpOYm1LeUY4bTRsNTlPcm1zQjd4QUVCeHFaTzNnR2xkZ1BJQXdBaXZ5WEJsUDcxeTlNditKZXIwWTBMTHR5elRqMWlGNlZGcXlWWDFRSlRGNVdtOXJVS3hrNW0vYS96aEMzWWJOemhONlBzZzBIcXBBMGc9PSIsIm1hYyI6ImU2YWVmMGE0ODVlNzY5YjU2YzhhMmI0MjFiYmY2ODU1MWNlZTJlMGJmOTEyYjQyZmZhNjQ4M2VhYTAyNjdlY2EiLCJ0YWciOiIifQ=="
-
 st.title("لوحة المطابقة المالية الموحدة - شركة الشويرد")
 st.markdown("---")
 
+# ---------------------------------------------------------
+# واجهة المحاسب: الشريط الجانبي لرفع الملفات
+# ---------------------------------------------------------
+st.sidebar.header("خيارات ومطابقة المحاسب")
+st.sidebar.markdown(
+    "قم برفع ملفات التقارير الخاصة بمتجر زد وأونكس برو لإجراء المطابقة"
+    " الفورية."
+)
 
-@st.cache_data(ttl=300)
-def fetch_zid_data():
-  # تجربة الرابط البديل أو إضافة معلومات الهيدر المطلوبة بدقة لـ زد
-  url = "https://api.zid.sa/v1/managers/store/orders"
-  headers = {
-      "Authorization": f"Bearer {ZID_MANAGER_TOKEN}",
-      "X-Manager-Token": ZID_MANAGER_TOKEN,
-      "Store-Id": ZID_STORE_ID,
-      "Content-Type": "application/json",
-      "Accept": "application/json",
-      "Accept-Language": "ar",
-  }
+# رفع ملف زد
+zid_file = st.sidebar.file_uploader(
+    "1️⃣ رفع تقرير طلبات زد (Zid Export)", type=["xlsx", "csv"]
+)
+
+# رفع ملف أونكس برو
+onyx_file = st.sidebar.file_uploader(
+    "2️⃣ رفع كشف أونكس برو (Onyx Pro)", type=["xlsx", "csv"]
+)
+
+st.sidebar.markdown("---")
+
+
+# دالة مساعدة لقراءة الملفات بمرونة
+def load_uploaded_file(uploaded_file):
+  if uploaded_file is None:
+    return pd.DataFrame()
   try:
-    response = requests.get(url, headers=headers, timeout=15)
-    st.sidebar.info(f"حالة الاتصال: {response.status_code}")
-
-    if response.status_code == 200:
-      if "html" in response.text.lower():
-        st.error(
-            "الخادم أرجع صفحة HTML (تسجيل دخول). تأكد من صحة صلاحيات التوكن."
-        )
-        return pd.DataFrame()
-
-      data = response.json()
-      orders = (
-          data.get("orders", [])
-          if isinstance(data, dict)
-          else data.get("data", [])
-      )
-      if not orders and isinstance(data, list):
-        orders = data
-
-      parsed = []
-      for order in orders:
-        payment_info = order.get("payment", {})
-        customer_info = order.get("customer", {})
-        deposit_id = (
-            payment_info.get("settlement_id")
-            or payment_info.get("deposit_id")
-            or order.get("deposit_id")
-            or ""
-        )
-
-        parsed.append({
-            "المنصة / البوابة": "متجر زد (Zid)",
-            "رقم الطلب / المرجع": str(
-                order.get("id") or order.get("order_id", "")
-            ),
-            "رقم الجوال": str(
-                customer_info.get("mobile") or order.get("customer_phone", "")
-            ).strip(),
-            "تاريخ العملية": str(
-                order.get("created_at") or order.get("date", "")
-            )[:10],
-            "وسيلة الدفع": str(
-                payment_info.get("payment_method", {}).get("name")
-                or order.get("payment_method", "غير محدد")
-            ),
-            "المبلغ": float(
-                order.get("order_total") or order.get("total", 0.0)
-            ),
-            "رقم الإيداع / التسوية": str(deposit_id).strip(),
-        })
-      return pd.DataFrame(parsed)
+    if uploaded_file.name.endswith(".csv"):
+      return pd.read_csv(uploaded_file)
     else:
-      st.error(f"خطأ API: {response.status_code} - {response.text}")
-      return pd.DataFrame()
+      return pd.read_excel(uploaded_file)
   except Exception as e:
-    st.error(f"خطأ اتصال: {e}")
+    st.error(f"خطأ في قراءة الملف {uploaded_file.name}: {e}")
     return pd.DataFrame()
 
 
-def fetch_other_gateways_api():
-  return pd.DataFrame()
+df_zid_raw = load_uploaded_file(zid_file)
+df_onyx_raw = load_uploaded_file(onyx_file)
 
+if not df_zid_raw.empty:
+  # توحيد أسماء أعمدة زد وتنقيتها
+  df_zid_raw.columns = [str(c).lower().strip() for c in df_zid_raw.columns]
 
-st.sidebar.header("خيارات ومطابقة المحاسب")
-onyx_file = st.sidebar.file_uploader(
-    "رفع ملف أونكس برو (اختياري للمطابقة المحاسبية)", type=["xlsx", "csv"]
-)
+  # استخراج الأعمدة بمرونة حسب مسميات زد الشهيرة
+  parsed = []
+  for _, row in df_zid_raw.iterrows():
+    # البحث عن القيم بالأعمدة المختلفة المحتملة
+    order_id = str(
+        row.get("id")
+        or row.get("order_id")
+        or row.get("رقم الطلب")
+        or row.get("الرقم")
+        or ""
+    )
+    mobile = str(
+        row.get("customer_phone")
+        or row.get("mobile")
+        or row.get("phone")
+        or row.get("الجوال")
+        or row.get("رقم الجوال")
+        or ""
+    ).strip()
+    date = str(
+        row.get("created_at")
+        or row.get("date")
+        or row.get("التاريخ")
+        or ""
+    )[:10]
+    payment_method = str(
+        row.get("payment_method")
+        or row.get("payment")
+        or row.get("وسيلة الدفع")
+        or "غير محدد"
+    )
+    total = float(
+        row.get("order_total")
+        or row.get("total")
+        or row.get("المبلغ")
+        or row.get("الاجمالي")
+        or 0.0
+    )
+    deposit_id = str(
+        row.get("settlement_id")
+        or row.get("deposit_id")
+        or row.get("رقم الإيداع")
+        or row.get("رقم التسوية")
+        or ""
+    ).strip()
 
-if st.sidebar.button("تحديث وسحب البيانات من الـ APIs"):
-  st.cache_data.clear()
-  st.rerun()
+    parsed.append({
+        "المنصة / البوابة": "متجر زد (Zid)",
+        "رقم الطلب / المرجع": order_id,
+        "رقم الجوال": mobile,
+        "تاريخ العملية": date,
+        "وسيلة الدفع": payment_method,
+        "المبلغ": total,
+        "رقم الإيداع / التسوية": deposit_id,
+    })
 
-df_zid = fetch_zid_data()
-df_others = fetch_other_gateways_api()
+  master_df = pd.DataFrame(parsed)
 
-all_frames = []
-if not df_zid.empty:
-  all_frames.append(df_zid)
-if not df_others.empty:
-  all_frames.append(df_others)
-
-if all_frames:
-  master_df = pd.concat(all_frames, ignore_index=True)
-
+  # معالجة ملف أونكس برو للمطابقة
   onyx_matched_keys = set()
-  if onyx_file:
-    try:
-      df_onyx = (
-          pd.read_csv(onyx_file)
-          if onyx_file.name.endswith(".csv")
-          else pd.read_excel(onyx_file)
+  if not df_onyx_raw.empty:
+    df_onyx_raw.columns = [str(c).lower().strip() for c in df_onyx_raw.columns]
+    o_ref = next(
+        (
+            c
+            for c in df_onyx_raw.columns
+            if "order" in c or "reference" in c or "مرجع" in c or "فاتورة" in c
+        ),
+        None,
+    )
+    o_phone = next(
+        (
+            c
+            for c in df_onyx_raw.columns
+            if "phone" in c or "mobile" in c or "جوال" in c
+        ),
+        None,
+    )
+
+    if o_ref:
+      onyx_matched_keys.update(
+          df_onyx_raw[o_ref].astype(str).str.strip().tolist()
       )
-      df_onyx.columns = [str(c).lower().strip() for c in df_onyx.columns]
-      o_ref = next(
-          (
-              c
-              for c in df_onyx.columns
-              if "order" in c or "reference" in c or "مرجع" in c or "فاتورة" in c
-          ),
-          None,
+    if o_phone:
+      onyx_matched_keys.update(
+          df_onyx_raw[o_phone].astype(str).str.strip().tolist()
       )
-      o_phone = next(
-          (
-              c
-              for c in df_onyx.columns
-              if "phone" in c or "mobile" in c or "جوال" in c
-          ),
-          None,
-      )
-      if o_ref:
-        onyx_matched_keys.update(df_onyx[o_ref].astype(str).str.strip().tolist())
-      if o_phone:
-        onyx_matched_keys.update(
-            df_onyx[o_phone].astype(str).str.strip().tolist()
-        )
-      st.sidebar.success("تم قراءة كشف أونكس برو بنجاح")
-    except Exception as e:
-      st.sidebar.error(f"خطأ في ملف أونكس: {e}")
+    st.sidebar.success("تم قراءة ملف أونكس برو بنجاح")
 
 
+  # تحديد حالة المطابقة (وجود رقم إيداع/تسوية)
   def resolve_status(row):
     dep = str(row["رقم الإيداع / التسوية"]).strip().lower()
-    if dep != "" and dep != "nan" and dep != "none":
+    if dep != "" and dep != "nan" and dep != "none" and dep != "0":
       return "مطابق"
     else:
       return "معلق لم ينزل رقم إيداع"
@@ -157,7 +153,7 @@ if all_frames:
 
   master_df["حالة المطابقة"] = master_df.apply(resolve_status, axis=1)
 
-  if onyx_file:
+  if not df_onyx_raw.empty:
 
     def check_onyx(row):
       ref = str(row["رقم الطلب / المرجع"])
@@ -168,6 +164,7 @@ if all_frames:
 
     master_df["حالة أونكس"] = master_df.apply(check_onyx, axis=1)
 
+  # مؤشرات الملخص (KPIs)
   matched_df = master_df[master_df["حالة المطابقة"] == "مطابق"]
   pending_df = master_df[master_df["حالة المطابقة"] == "معلق لم ينزل رقم إيداع"]
 
@@ -186,12 +183,19 @@ if all_frames:
   )
 
   st.markdown("---")
-  view_mode = st.radio(
-      "عرض الحركات:",
-      ["الكل", "مطابق فقط", "معلق لم ينزل رقم إيداع فقط"],
-      horizontal=True,
-  )
-  search_query = st.text_input("بحث سريع:", "")
+
+  # أدوات الفلترة والبحث
+  filter_col1, filter_col2 = st.columns([2, 2])
+  with filter_col1:
+    view_mode = st.radio(
+        "عرض الحركات:",
+        ["الكل", "مطابق فقط", "معلق لم ينزل رقم إيداع فقط"],
+        horizontal=True,
+    )
+  with filter_col2:
+    search_query = st.text_input(
+        "بحث سريع (برقم الطلب، الجوال، أو رقم الإيداع):", ""
+    )
 
   if view_mode == "مطابق فقط":
     working_df = matched_df
@@ -208,15 +212,17 @@ if all_frames:
 
   st.dataframe(working_df, use_container_width=True, hide_index=True)
 
+  st.markdown("---")
   output_buffer = io.BytesIO()
   with pd.ExcelWriter(output_buffer, engine="xlsxwriter") as writer:
-    master_df.to_excel(writer, sheet_name="تقرير المطابقة", index=False)
+    master_df.to_excel(writer, sheet_name="تقرير المطابقة المالي", index=False)
 
   st.download_button(
-      label="تحميل التقرير النهائي (Excel)",
+      label="تحميل تقرير المطابقة الشامل (Excel للمحاسبة)",
       data=output_buffer.getvalue(),
-      file_name="Shuwayred_Report.xlsx",
+      file_name="Shuwayred_Financial_Reconciliation.xlsx",
       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   )
+
 else:
-  st.warning("بانتظار سحب البيانات الصحيحة من المنصة...")
+  st.info("الرجاء رفع تقرير طلبات زد (Zid Export) من القائمة الجانبية للبدء.")
