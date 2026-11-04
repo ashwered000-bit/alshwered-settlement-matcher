@@ -23,7 +23,7 @@ st.markdown("<p style='text-align: center; color: #4b5563;'>النظام الم�
 
 st.divider()
 
-# --- قسم رفع الملفات بالكامل (ظاهر دائماً وبدون قيود) ---
+# --- قسم رفع الملفات بالكامل ---
 st.subheader("📁 رفع الملفات المطلوبة للمطابقة والفحص")
 col_f1, col_f2, col_f3 = st.columns(3, gap="medium")
 
@@ -35,7 +35,7 @@ with col_f2:
     payout_file = st.file_uploader("2️⃣ كشف تسوية المنصة / البوابة", type=["csv", "xlsx"], key="payout")
 
 with col_f3:
-    system_file = st.file_uploader("3️⃣ فواتير النظام الداخلي (اختياري للمطابقة)", type=["csv", "xlsx"], key="system")
+    system_file = st.file_uploader("3️⃣ فواتير النظام الداخلي (اختياري)", type=["csv", "xlsx"], key="system")
 
 st.divider()
 
@@ -53,18 +53,22 @@ if zid_file and payout_file:
         except:
             payout_df = pd.read_csv(payout_file, encoding='latin1') if payout_file.name.endswith('.csv') else pd.read_excel(payout_file)
         
+        # لو ملف مدفوع، السطر الأول هو الهيدر الفعلي
+        if gateway_name == "مدفوع (Madfooat)":
+            payout_df = pd.read_excel(payout_file, header=1)
+
         # تنظيف بيانات زد
         zid_df['clean_id'] = pd.to_numeric(zid_df['id'], errors='coerce').fillna(0).astype('int64').astype(str).str.strip()
         zid_df['clean_mobile'] = zid_df['customer_mobile'].astype(str).str.replace(r'\D', '', regex=True).str.strip()
         zid_df['clean_total'] = pd.to_numeric(zid_df['total'], errors='coerce').fillna(0).round(2)
         zid_df['clean_name'] = zid_df['customer_name'].astype(str).str.strip().str.lower()
         
-        # البحث الذكي لأعمدة المنصات (يدعم تابي، تمارا، مس بي، مدفوع، وإمكان بدقة)
+        # البحث الذكي لأعمدة المنصات (يشمل تابي Order number، تمارا، مس بي، مدفوع، وإمكان)
         p_cols = payout_df.columns
         p_cols_lower = [str(c).lower() for c in p_cols]
         
         p_id_col = None
-        for key in ['order id', 'order_id', 'merchant order id', 'order reference', 'reference', 'id', 'رقم الطلب', 'المرجع', 'charge id', 'application number']:
+        for key in ['order number', 'order id', 'order_id', 'الرقم المرجعي', 'merchant order id', 'order reference', 'reference', 'id', 'رقم الطلب', 'charge id', 'application number']:
             for idx, col_l in enumerate(p_cols_lower):
                 if key in col_l:
                     p_id_col = p_cols[idx]
@@ -75,7 +79,7 @@ if zid_file and payout_file:
             p_id_col = p_cols[0]
 
         p_amt_col = None
-        for key in ['amount', 'total', 'paid', 'مبلغ', 'الإجمالي', 'total bill amount', 'captured', 'value']:
+        for key in ['captured amount', 'payment amount', 'amount', 'total', 'المبلغ', 'paid', 'الإجمالي', 'total bill amount', 'captured']:
             for idx, col_l in enumerate(p_cols_lower):
                 if key in col_l:
                     p_amt_col = p_cols[idx]
@@ -86,7 +90,7 @@ if zid_file and payout_file:
             p_amt_col = p_cols[1] if len(p_cols) > 1 else p_cols[0]
 
         p_mob_col = None
-        for key in ['mobile', 'phone', 'customer_mobile', 'جوال', 'هاتف']:
+        for key in ['customer phone number', 'mobile', 'phone', 'customer_mobile', 'رقم جوال العميل', 'جوال', 'هاتف']:
             for idx, col_l in enumerate(p_cols_lower):
                 if key in col_l:
                     p_mob_col = p_cols[idx]
@@ -98,15 +102,18 @@ if zid_file and payout_file:
         payout_df['clean_p_amount'] = pd.to_numeric(payout_df[p_amt_col], errors='coerce').fillna(0).round(2)
         payout_df['clean_p_mobile'] = payout_df[p_mob_col].astype(str).str.replace(r'\D', '', regex=True).str.strip() if p_mob_col else ""
 
-        payout_ids = set(payout_df['clean_p_id'])
+        # إنشاء مجموعة بجميع النصوص والأرقام الموجودة في كشف المنصة
+        payout_all_texts = set()
+        for col in payout_df.columns:
+            payout_all_texts.update(payout_df[col].astype(str).str.strip().tolist())
+
         gateway_status = []
-        
         for idx, row in zid_df.iterrows():
             z_id = row['clean_id']
             z_mob = row['clean_mobile']
             z_tot = row['clean_total']
             
-            if z_id in payout_ids:
+            if z_id in payout_all_texts:
                 gateway_status.append("مطابق برقم الطلب ✅")
             else:
                 p_found = payout_df[(payout_df['clean_p_amount'] == z_tot) & ((payout_df['clean_p_mobile'] == z_mob) if z_mob != "" else True)]
@@ -128,36 +135,9 @@ if zid_file is not None and system_file is not None and zid_df is not None:
         s_cols = system_df.columns
         s_cols_lower = [str(c).lower() for c in s_cols]
         
-        s_ref_col = None
-        for key in ['مرجع', 'reference', 'ref', 'order', 'رقم الطلب', 'رقم الفاتورة']:
-            for idx, col_l in enumerate(s_cols_lower):
-                if key in col_l:
-                    s_ref_col = s_cols[idx]
-                    break
-            if s_ref_col:
-                break
-        if not s_ref_col:
-            s_ref_col = s_cols[0]
-
-        s_amt_col = None
-        for key in ['مبلغ', 'amount', 'total', 'الإجمالي']:
-            for idx, col_l in enumerate(s_cols_lower):
-                if key in col_l:
-                    s_amt_col = s_cols[idx]
-                    break
-            if s_amt_col:
-                break
-        if not s_amt_col:
-            s_amt_col = s_cols[3] if len(s_cols) > 3 else s_cols[1]
-
-        s_mob_col = None
-        for key in ['موبايل', 'جوال', 'phone', 'mobile']:
-            for idx, col_l in enumerate(s_cols_lower):
-                if key in col_l:
-                    s_mob_col = s_cols[idx]
-                    break
-            if s_mob_col:
-                break
+        s_ref_col = next((s_cols[idx] for idx, col_l in enumerate(s_cols_lower) if any(k in col_l for k in ['مرجع', 'reference', 'ref', 'order', 'رقم الفاتورة'])), s_cols[0])
+        s_amt_col = next((s_cols[idx] for idx, col_l in enumerate(s_cols_lower) if any(k in col_l for k in ['مبلغ', 'amount', 'total', 'الإجمالي'])), s_cols[3] if len(s_cols)>3 else s_cols[1])
+        s_mob_col = next((s_cols[idx] for idx, col_l in enumerate(s_cols_lower) if any(k in col_l for k in ['موبايل', 'جوال', 'phone', 'mobile'])), None)
 
         system_df['clean_s_ref'] = pd.to_numeric(system_df[s_ref_col], errors='coerce').fillna(0).astype('int64').astype(str).str.strip()
         system_df['clean_s_amount'] = pd.to_numeric(system_df[s_amt_col], errors='coerce').fillna(0).round(2)
@@ -181,7 +161,6 @@ if zid_file is not None and system_file is not None and zid_df is not None:
                     match_cond = False
                 
                 s_found = system_df[match_cond]
-                
                 if not s_found.empty and z_mob != "":
                     system_status.append("مفوتر بالسيستم (برقم الجوال + المبلغ) ⚠️")
                 else:
@@ -190,7 +169,7 @@ if zid_file is not None and system_file is not None and zid_df is not None:
         zid_df['حالة_المطابقة_مع_السيستم'] = system_status
 
     except Exception as e:
-        st.error(f"خطأ في معالجة فواتير النظام الداخلي: {e}")
+        st.error(f"حدث خطأ أثناء معالجة فواتير النظام الداخلي: {e}")
 elif zid_file is not None and zid_df is not None:
     zid_df['حالة_المطابقة_مع_السيستم'] = "لم يتم رفع ملف السيستم"
 
@@ -224,9 +203,9 @@ if zid_file is not None and zid_df is not None:
 
 st.divider()
 
-# --- قسم مستقل منفصل لفحص الفواتير المكررة ---
+# --- قسم لفحص الفواتير المكررة ---
 st.subheader("🔍 فحص الفواتير المكررة في النظام الداخلي")
-st.markdown("<p style='text-align: center; color: #4b5563;'>ارفع ملف فواتير النظام الداخلي هنا في أي وقت لفحص وكشف الفواتير المكررة (برقم المرجع أو برقم الجوال).</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #4b5563;'>ارفع ملف فواتير النظام الداخلي لفحص وكشف الفواتير المكررة.</p>", unsafe_allow_html=True)
 
 dup_file = st.file_uploader("📂 ملف فواتير النظام الداخلي لفحص التكرار (Excel / CSV)", type=["csv", "xlsx"], key="duplicates_checker")
 
@@ -234,7 +213,6 @@ if dup_file:
     with st.spinner("⏳ جاري فحص السجلات والبحث عن التكرارات..."):
         try:
             dup_df = pd.read_csv(dup_file) if dup_file.name.endswith('.csv') else pd.read_excel(dup_file)
-            
             d_cols = dup_df.columns
             d_cols_lower = [str(c).lower() for c in d_cols]
             
@@ -273,7 +251,6 @@ if dup_file:
             
             if not suspicious_df.empty:
                 st.dataframe(suspicious_df, use_container_width=True, height=300)
-                
                 col_d1, col_d2, col_d3 = st.columns([1, 2, 1])
                 with col_d2:
                     dup_excel = suspicious_df.to_csv(index=False).encode('utf-8-sig')
