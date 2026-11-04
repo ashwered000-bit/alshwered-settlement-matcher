@@ -9,15 +9,15 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("🛡️ نظام مطابقة طلبات زد مع بوابات الدفع (Zid vs Payment Gateways)")
+st.title("🛡️ نظام مطابقة طلبات زد مع بوابات الدفع")
 st.markdown(
-    "مطابقة آلية لطلب زد مع (تابي، تمارا، مس بي، إمكان، مدفوع) عبر الـ APIs"
-    " للتحقق من وصول المبالغ."
+    "فحص ومطابقة آلية دقيقة لطلبات زد مع (تابي، تمارا، مس بي، إمكان، مدفوع) عبر"
+    " الـ APIs."
 )
 st.markdown("---")
 
 # ---------------------------------------------------------
-# المفاتيح المعتمدة لبوابات الدفع (تابي، تمارا، مس بي، إمكان، مدفوع)
+# المفاتيح المعتمدة للبوابات
 # ---------------------------------------------------------
 GATEWAYS_CONFIG = {
     "tabby": {
@@ -58,16 +58,13 @@ GATEWAYS_CONFIG = {
     },
 }
 
-# ---------------------------------------------------------
-# الشريط الجانبي: رفع الملف وخيارات التشغيل
-# ---------------------------------------------------------
-st.sidebar.header("📥 مدخلات المطابقة")
+st.sidebar.header("📥 ملف البيانات")
 zid_file = st.sidebar.file_uploader(
     "رفع تقرير طلبات زد (Zid Export)", type=["xlsx", "csv"]
 )
 
 # ---------------------------------------------------------
-# دوال الاستعلام من APIs بوابات الدفع
+# دوال الاستعلام المحسّنة للدقة
 # ---------------------------------------------------------
 
 
@@ -78,8 +75,9 @@ def check_tabby_payment(order_id):
       "Accept": "application/json",
   }
   try:
+    # الاستعلام باستخدام reference_id الخاص بالطلب
     url = f"{cfg['base_url']}/payments?merchant_code={cfg['merchant_code']}&order_reference={order_id}"
-    resp = requests.get(url, headers=headers, timeout=5)
+    resp = requests.get(url, headers=headers, timeout=6)
     if resp.status_code == 200:
       data = resp.json()
       payments = (
@@ -89,18 +87,18 @@ def check_tabby_payment(order_id):
       )
       if payments:
         p = payments[0]
-        status = p.get("status", "").lower()
+        status = str(p.get("status", "")).lower()
         if status in ["authorized", "closed", "captured"]:
-          return True, "تم الدفع والتحصيل بنجاح", p.get("id", "")
+          return True, "موجود وموثق في المنصة", p.get("id", "")
         return (
             False,
-            f"موجودة في تابي ولكن الحالة ({status})",
+            f"موجود في تابي بالحالة ({status})",
             p.get("id", ""),
         )
       return False, "غير موجود في تابي", ""
-    return False, f"خطأ تابي ({resp.status_code})", ""
+    return False, f"استجابة تابي ({resp.status_code})", ""
   except Exception as e:
-    return False, f"فشل الاتصال بـ تابي: {e}", ""
+    return False, f"خطأ اتصال تابي: {e}", ""
 
 
 def check_tamara_payment(order_id):
@@ -111,20 +109,20 @@ def check_tamara_payment(order_id):
   }
   try:
     url = f"{cfg['base_url']}/orders/reference-id/{order_id}"
-    resp = requests.get(url, headers=headers, timeout=5)
+    resp = requests.get(url, headers=headers, timeout=6)
     if resp.status_code == 200:
       data = resp.json()
-      status = data.get("status", "").lower()
+      status = str(data.get("status", "")).lower()
       if status in ["approved", "fully_captured", "authorised"]:
-        return True, "تم التحصيل والتعميد بنجاح", data.get("order_id", "")
+        return True, "موجود وموثق في المنصة", data.get("order_id", "")
       return (
           False,
-          f"موجودة في تمارا ولكن الحالة ({status})",
+          f"موجود في تمارا بالحالة ({status})",
           data.get("order_id", ""),
       )
     return False, "غير موجود في تمارا", ""
   except Exception as e:
-    return False, f"فشل الاتصال بـ تمارا: {e}", ""
+    return False, f"خطأ اتصال تمارا: {e}", ""
 
 
 def check_mispay_payment(order_id):
@@ -136,16 +134,20 @@ def check_mispay_payment(order_id):
   }
   try:
     url = f"{cfg['base_url']}/orders/check/{order_id}"
-    resp = requests.get(url, headers=headers, timeout=5)
+    resp = requests.get(url, headers=headers, timeout=6)
     if resp.status_code == 200:
       data = resp.json()
       status = str(data.get("status", "")).lower()
       if status in ["success", "paid", "completed", "1"]:
-        return True, "تم الدفع بنجاح في مس بي", data.get("transaction_id", "")
-      return False, f"حالة مس بي: ({status})", data.get("transaction_id", "")
+        return True, "موجود وموثق في المنصة", data.get("transaction_id", "")
+      return (
+          False,
+          f"موجود في مس بي بالحالة ({status})",
+          data.get("transaction_id", ""),
+      )
     return False, "غير موجود في مس بي", ""
   except Exception as e:
-    return False, f"فشل الاتصال بـ مس بي: {e}", ""
+    return False, f"خطأ اتصال مس بي: {e}", ""
 
 
 def check_emkan_payment(order_id):
@@ -158,16 +160,20 @@ def check_emkan_payment(order_id):
   }
   try:
     url = f"{cfg['base_url']}/orders/status?order_id={order_id}"
-    resp = requests.get(url, headers=headers, timeout=5)
+    resp = requests.get(url, headers=headers, timeout=6)
     if resp.status_code == 200:
       data = resp.json()
       status = str(data.get("status", "")).lower()
-      if status in ["approved", "disbursed", "completed"]:
-        return True, "تم الاعتماد والصرف في إمكان", data.get("emkan_ref", "")
-      return False, f"حالة إمكان: ({status})", data.get("emkan_ref", "")
+      if status in ["approved", "disbursed", "completed", "success"]:
+        return True, "موجود وموثق في المنصة", data.get("emkan_ref", "")
+      return (
+          False,
+          f"موجود في إمكان بالحالة ({status})",
+          data.get("emkan_ref", ""),
+      )
     return False, "غير موجود في إمكان", ""
   except Exception as e:
-    return False, f"فشل الاتصال بـ إمكان: {e}", ""
+    return False, f"خطأ اتصال إمكان: {e}", ""
 
 
 def check_madfu_payment(order_id):
@@ -180,44 +186,62 @@ def check_madfu_payment(order_id):
   }
   try:
     url = f"{cfg['base_url']}/merchant/v1/orders/{order_id}"
-    resp = requests.get(url, headers=headers, timeout=5)
+    resp = requests.get(url, headers=headers, timeout=6)
     if resp.status_code == 200:
       data = resp.json()
       status = str(data.get("status", "")).lower()
       if status in ["paid", "captured", "success"]:
-        return True, "تم السداد بنجاح في مدفوع", data.get("madfu_id", "")
-      return False, f"حالة مدفوع: ({status})", data.get("madfu_id", "")
+        return True, "موجود وموثق في المنصة", data.get("madfu_id", "")
+      return (
+          False,
+          f"موجود في مدفوع بالحالة ({status})",
+          data.get("madfu_id", ""),
+      )
     return False, "غير موجود في مدفوع", ""
   except Exception as e:
-    return False, f"فشل الاتصال بـ مدفوع: {e}", ""
+    return False, f"خطأ اتصال مدفوع: {e}", ""
 
 
 # ---------------------------------------------------------
-# محرك المطابقة المباشر
+# المعالجة والمطابقة
 # ---------------------------------------------------------
 if zid_file is not None:
   try:
-    if zid_file.name.endswith(".csv"):
-      df_zid = pd.read_csv(zid_file)
-    else:
-      df_zid = pd.read_excel(zid_file)
+    df_raw = (
+        pd.read_csv(zid_file)
+        if zid_file.name.endswith(".csv")
+        else pd.read_excel(zid_file)
+    )
 
-    df_zid.columns = [str(c).lower().strip() for c in df_zid.columns]
+    df_raw.columns = [str(c).lower().strip() for c in df_raw.columns]
 
-    st.success(f"تم قراءة تقرير زد بنجاح ({len(df_zid)} طلب).")
+    # تحديد عمود رقم الطلب
+    order_col = next(
+        (
+            c
+            for c in df_raw.columns
+            if c in ["id", "order_id", "رقم الطلب", "الرقم"]
+        ),
+        df_raw.columns[0],
+    )
+
+    # 1. إزالة التكرارات قبل البدء
+    initial_count = len(df_raw)
+    df_zid = df_raw.drop_duplicates(subset=[order_col], keep="first").copy()
+    deduped_count = len(df_zid)
+    removed_count = initial_count - deduped_count
+
+    st.success(
+        f"تم قراءة التقرير: الإجمالي ({initial_count}) طلب. تم حذف"
+        f" ({removed_count}) طلب مكرر. الصافي المعتمد للفحص: ({deduped_count})"
+        " طلب فريد."
+    )
 
     results = []
     progress_bar = st.progress(0)
-    total_rows = len(df_zid)
 
-    for index, row in df_zid.iterrows():
-      order_id = str(
-          row.get("id")
-          or row.get("order_id")
-          or row.get("رقم الطلب")
-          or row.get("الرقم")
-          or ""
-      ).strip()
+    for index, (_, row) in enumerate(df_zid.iterrows()):
+      order_id = str(row.get(order_col, "")).strip()
       method = (
           str(
               row.get("payment_method")
@@ -236,92 +260,88 @@ if zid_file is not None:
           or 0.0
       )
 
-      is_paid = False
-      status_msg = "لم يتم الفحص"
+      is_found = False
+      status_msg = ""
       ref_id = ""
-      gateway_detected = "غير معروفة"
+      gateway_label = ""
 
-      # التوجيه التلقائي للـ API بناءً على وسيلة الدفع
+      # التوجيه بناءً على وسيلة الدفع
       if "tabby" in method or "تابي" in method:
-        gateway_detected = "تابي (Tabby)"
-        is_paid, status_msg, ref_id = check_tabby_payment(order_id)
+        gateway_label = "تابي (Tabby)"
+        is_found, status_msg, ref_id = check_tabby_payment(order_id)
       elif "tamara" in method or "تمارا" in method:
-        gateway_detected = "تمارا (Tamara)"
-        is_paid, status_msg, ref_id = check_tamara_payment(order_id)
+        gateway_label = "تمارا (Tamara)"
+        is_found, status_msg, ref_id = check_tamara_payment(order_id)
       elif "mispay" in method or "مس بي" in method or "مسبي" in method:
-        gateway_detected = "مس بي (Mispay)"
-        is_paid, status_msg, ref_id = check_mispay_payment(order_id)
+        gateway_label = "مس بي (Mispay)"
+        is_found, status_msg, ref_id = check_mispay_payment(order_id)
       elif "emkan" in method or "إمكان" in method or "امكان" in method:
-        gateway_detected = "إمكان (Emkan)"
-        is_paid, status_msg, ref_id = check_emkan_payment(order_id)
+        gateway_label = "إمكان (Emkan)"
+        is_found, status_msg, ref_id = check_emkan_payment(order_id)
       elif "madfu" in method or "مدفوع" in method:
-        gateway_detected = "مدفوع (Madfu)"
-        is_paid, status_msg, ref_id = check_madfu_payment(order_id)
+        gateway_label = "مدفوع (Madfu)"
+        is_found, status_msg, ref_id = check_madfu_payment(order_id)
       else:
-        gateway_detected = f"وسيلة أخرى ({method})"
-        is_paid = True
-        status_msg = "خارج نطاق بوابات BNPL المستهدفة"
+        gateway_label = f"وسيلة أخرى ({method if method else 'غير محددة'})"
+        is_found = True
+        status_msg = "طلب غير تابع لبوابات BNPL المستهدفة"
 
       results.append({
           "رقم طلب زد": order_id,
           "وسيلة الدفع في زد": method,
-          "البوابة المحددة": gateway_detected,
+          "البوابة المحددة": gateway_label,
           "المبلغ": amount,
-          "نتيجة الدفع بالـ API": (
-              "✅ مسددة ومقبوضة" if is_paid else "❌ معلقة / لم تُسدد"
+          "حالة التوثيق في المنصة": (
+              "✅ موجود في المنصة"
+              if is_found
+              else (
+                  "ℹ️ غير تابع للبوابات"
+                  if "غير تابع" in status_msg
+                  else "❌ غير موجود / لم يوثق"
+              )
           ),
-          "تفاصيل الاستجابة": status_msg,
+          "تفاصيل الاستجابة الدقيقة": status_msg,
           "مرجع العملية في البوابة": ref_id,
       })
 
-      progress_bar.progress((index + 1) / total_rows)
+      progress_bar.progress((index + 1) / deduped_count)
 
     res_df = pd.DataFrame(results)
 
     # ---------------------------------------------------------
-    # عرض المؤشرات والنتائج
+    # عرض ملخص النتائج
     # ---------------------------------------------------------
-    st.markdown("### 📊 ملخص مطابقة الفلوس والتحصيل")
+    st.markdown("### 📊 ملخص المطابقة والتحقق من المنصات")
     c1, c2, c3 = st.columns(3)
-    paid_count = len(res_df[res_df["نتيجة الدفع بالـ API"].str.contains("✅")])
-    unpaid_count = len(
-        res_df[res_df["نتيجة الدفع بالـ API"].str.contains("❌")]
-    )
 
-    paid_sum = res_df[res_df["نتيجة الدفع بالـ API"].str.contains("✅")][
-        "المبلغ"
-    ].sum()
-    unpaid_sum = res_df[res_df["نتيجة الدفع بالـ API"].str.contains("❌")][
-        "المبلغ"
-    ].sum()
+    found_df = res_df[res_df["حالة التوثيق في المنصة"].str.contains("✅")]
+    notFound_df = res_df[res_df["حالة التوثيق في المنصة"].str.contains("❌")]
 
-    c1.metric("إجمالي طلبات زد", f"{len(res_df)} طلب")
+    c1.metric("إجمالي الطلبات (بعد حذف المكرر)", f"{len(res_df)} طلب")
     c2.metric(
-        "طلبات مدفوعة ومؤكدة ✅",
-        f"{paid_count} طلب",
-        delta=f"{paid_sum:,.2f} ر.س",
+        "طلبات موجودة وموثقة ✅",
+        f"{len(found_df)} طلب",
+        delta=f"{found_df['المبلغ'].sum():,.2f} ر.س",
     )
     c3.metric(
-        "طلبات معلقة ولم تُسدد ❌",
-        f"{unpaid_count} طلب",
-        delta=f"-{unpaid_sum:,.2f} ر.س",
+        "طلبات غير موجودة / معلقة ❌",
+        f"{len(notFound_df)} طلب",
+        delta=f"-{notFound_df['المبلغ'].sum():,.2f} ر.س",
         delta_color="inverse",
     )
 
     st.markdown("---")
     st.dataframe(res_df, use_container_width=True, hide_index=True)
 
-    # تصدير التقرير
     csv_bytes = res_df.to_csv(index=False).encode("utf-8-sig")
     st.download_button(
         "📥 تحميل تقرير المطابقة المالي (CSV)",
         data=csv_bytes,
-        file_name="Zid_Gateways_Reconciliation.csv",
+        file_name="Zid_Reconciliation_Clean.csv",
         mime="text/csv",
     )
 
   except Exception as e:
     st.error(f"حدث خطأ أثناء معالجة الملف: {e}")
-
 else:
-  st.info("الرجاء رفع تقرير طلبات زد (Zid Export) لبدء المطابقة المباشرة.")
+  st.info("الرجاء رفع تقرير طلبات زد لبدء المعالجة والمطابقة.")
